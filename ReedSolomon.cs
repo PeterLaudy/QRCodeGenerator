@@ -78,7 +78,7 @@ namespace QRCodeGenerator
             {
                 if (ReedSolomon.polynomialList[key].Count != key)
                 {
-                    throw new TypeLoadException(string.Format("Polynome for {0} contains unexpected number of components.", key));
+                    throw new TypeLoadException($"Polynome for {key} contains unexpected number of components.");
                 }
             }
         }

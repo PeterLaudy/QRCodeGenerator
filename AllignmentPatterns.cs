@@ -1,16 +1,13 @@
 ﻿// <copyright file="AllignmentPatterns.cs" project="QRCodeGenerator" author="Peter Laudy">
 // Copyright © 2024 - Peter Laudy All rights reserved.
 // </copyright>
-using System;
-using System.Collections.Generic;
-using System.Drawing;
 
 namespace QRCodeGenerator
 {
     /// <summary>
     /// Class which tells us where the allignment patterns are located for a given version of the QRCode.
     /// </summary>
-    public class AllignmentPatterns
+    internal class AllignmentPatterns
     {
         #region Static code
 
@@ -19,6 +16,8 @@ namespace QRCodeGenerator
         /// </summary>
         static AllignmentPatterns()
         {
+            Log.LogMessage();
+
             List<List<int>> list = new List<List<int>>();
 
             list.Add(new List<int>());
@@ -97,6 +96,8 @@ namespace QRCodeGenerator
         /// <param name="version">The version for which we want to find the AP positions.</param>
         public AllignmentPatterns(int version)
         {
+            Log.LogMessage();
+
             m_positions = AllignmentPatterns.s_list[version];
         }
 
@@ -139,6 +140,8 @@ namespace QRCodeGenerator
         /// <returns>True if an Allignment Pattern is located at the given position, false if not.</returns>
         public bool IsAPAtPos(int x, int y)
         {
+            Log.LogMessage();
+
             foreach (int xpos in m_positions)
             {
                 foreach (int ypos in m_positions)

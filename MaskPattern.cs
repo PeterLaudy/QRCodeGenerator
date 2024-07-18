@@ -1,16 +1,13 @@
 ﻿// <copyright file="MaskPattern.cs" project="QRCodeGenerator" author="Peter Laudy">
 // Copyright © 2024 - Peter Laudy All rights reserved.
 // </copyright>
-using System;
-using System.Collections.Generic;
-using System.Drawing;
 
 namespace QRCodeGenerator
 {
     /// <summary>
     /// Class to xor the bitmap with a pattern.
     /// </summary>
-    public class MaskPattern
+    internal class MaskPattern
     {
         #region Nested classes
 
@@ -287,6 +284,7 @@ namespace QRCodeGenerator
         /// <param name="version">The version of the QRCode to mask.</param>
         public MaskPattern(int maskPatternReference, int version)
         {
+            Log.LogInfo($"Mask:{maskPatternReference} Version:{version}");
             switch (maskPatternReference)
             {
                 case 0:
@@ -327,59 +325,45 @@ namespace QRCodeGenerator
         /// </summary>
         /// <param name="bmp">The bitmap to mask.</param>
         /// <returns>The masked bitmap.</returns>
-        public Bitmap MaskBitmap(Bitmap bmp)
+        public BitArray MaskBitmap(BitArray bmp)
         {
-            Bitmap result = new Bitmap(bmp.Width, bmp.Height, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
-            int size = result.Width - 1;
-            using (Graphics g = Graphics.FromImage(result))
-            using (Brush blackBrush = new SolidBrush(Color.Black))
-            using (Pen blackPen = new Pen(blackBrush))
+            var result = new BitArray(bmp.Version);
+            result.Set3CornerMarkers();
+
+            foreach (Point p in mask.AllAllignmentPatternPositions)
             {
-                g.Clear(Color.White);
-                g.DrawRectangle(blackPen, 0, 0, 6, 6);
-                g.DrawRectangle(blackPen, size - 6, 0, 6, 6);
-                g.DrawRectangle(blackPen, 0, size - 6, 6, 6);
-
-                g.FillRectangle(blackBrush, 2, 2, 3, 3);
-                g.FillRectangle(blackBrush, size - 4, 2, 3, 3);
-                g.FillRectangle(blackBrush, 2, size - 4, 3, 3);
-
-                foreach (Point p in mask.AllAllignmentPatternPositions)
+                for (var i = -2; i < 2; i++)
                 {
-                    g.DrawRectangle(blackPen, p.X - 2, p.Y - 2, 4, 4);
-                    result.SetPixel(p.X, p.Y, Color.Black);
+                    result[p.X + i, p.Y - 2] = true;
+                    result[p.X + 2, p.Y + i] = true;
+                    result[p.X - i, p.Y + 2] = true;
+                    result[p.X - 2, p.Y - i] = true;
+                    result[p.X, p.Y] = true;
                 }
             }
 
             // Black pixel near the bottom left corner of the bitmap.
-            result.SetPixel(8, size - 7, Color.Black);
+            result[8, bmp.Size - 7] = true;
 
-            for (int i = 8; i < result.Width - 8; i += 2)
+            for (int i = 8; i < result.Size- 8; i += 2)
             {
-                result.SetPixel(i, 6, Color.Black);
-                result.SetPixel(6, i, Color.Black);
+                result[i, 6] = true;
+                result[6, i] = true;
             }
 
-            for (int x = 0; x < result.Width; x++)
+            for (int x = 0; x < result.Size; x++)
             {
-                for (int y = 0; y < result.Height; y++)
+                for (int y = 0; y < result.Size; y++)
                 {
                     if (mask.IsDataAtPos(x, y))
                     {
                         if (mask.MustInvert(x, y))
                         {
-                            if (bmp.GetPixel(x, y).ToArgb() == Color.Black.ToArgb())
-                            {
-                                result.SetPixel(x, y, Color.White);
-                            }
-                            else
-                            {
-                                result.SetPixel(x, y, Color.Black);
-                            }
+                            result[x, y] = !bmp[x, y];
                         }
                         else
                         {
-                            result.SetPixel(x, y, bmp.GetPixel(x, y));
+                            result[x, y] = bmp[x, y];
                         }
                     }
                 }
@@ -396,46 +380,28 @@ namespace QRCodeGenerator
         /// </remarks>
         /// <param name="bmp">The bitmap to unmask.</param>
         /// <returns>The unmasked bitmap.</returns>
-        public Bitmap UnmaskBitmap(Bitmap bmp)
+        public BitArray UnmaskBitmap(BitArray bmp)
         {
-            Bitmap result = new Bitmap(bmp.Width, bmp.Height, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
-            using (Graphics g = Graphics.FromImage(result))
-            {
-                g.Clear(Color.White);
-            }
+            BitArray result = new BitArray(bmp.Version);
 
-            for (int x = 0; x < result.Width; x++)
+            for (int x = 0; x < result.Size; x++)
             {
-                for (int y = 0; y < result.Height; y++)
+                for (int y = 0; y < result.Size; y++)
                 {
                     if (mask.IsDataAtPos(x, y))
                     {
                         if (mask.MustInvert(x, y))
                         {
-                            if (bmp.GetPixel(x, y).ToArgb() == Color.Black.ToArgb())
-                            {
-                                result.SetPixel(x, y, Color.White);
-                            }
-                            else
-                            {
-                                result.SetPixel(x, y, Color.Black);
-                            }
+                            result[x, y] = !bmp[x, y];
                         }
                         else
                         {
-                            result.SetPixel(x, y, bmp.GetPixel(x, y));
+                            result[x, y] = bmp[x, y];
                         }
                     }
                     else
                     {
-                        if (bmp.GetPixel(x, y).ToArgb() == Color.Black.ToArgb())
-                        {
-                            result.SetPixel(x, y, Color.FromArgb(128, 0, 0));
-                        }
-                        else
-                        {
-                            result.SetPixel(x, y, Color.FromArgb(255, 64, 64));
-                        }
+                        result[x, y] = bmp[x, y];
                     }
                 }
             }

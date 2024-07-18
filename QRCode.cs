@@ -1,13 +1,9 @@
 ﻿// <copyright file="QRCode.cs" project="QRCodeGenerator" author="Peter Laudy">
 // Copyright © 2024 - Peter Laudy All rights reserved.
 // </copyright>
-using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.IO;
 using System.Text;
+using SkiaSharp;
 
 namespace QRCodeGenerator
 {
@@ -32,6 +28,8 @@ namespace QRCodeGenerator
         /// </summary>
         static QRCode()
         {
+            Log.LogDetailed("-");
+
             List<char> alphaNumericCharacters = new List<char>();
             for (char c = '0'; c <= '9'; c++)
             {
@@ -86,11 +84,6 @@ namespace QRCodeGenerator
         private List<BitStream> errorBlockBitStreams = new List<BitStream>();
 
         /// <summary>
-        /// Bitmap representation of the QRCode.
-        /// </summary>
-        private Bitmap? bitmap;
-
-        /// <summary>
         /// The reference of the pattern used to mask the data.
         /// </summary>
         private int maskPatternReference;
@@ -105,16 +98,31 @@ namespace QRCodeGenerator
         /// <param name="message">The message for which a QRCode must be created.</param>
         public QRCode(string message)
         {
+            Log.LogDetailed("-");
+
             WriteQRCode(message);
         }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="QRCode"/> class.
         /// </summary>
-        /// <param name="bmp">The bitmap from which the QRCode must be decoded.</param>
-        public QRCode(Bitmap bmp)
+        /// <param name="messages">The messages for which a QRCode must be created.</param>
+        public QRCode(string[] messages)
         {
-            bitmap = bmp;
+            Log.LogDetailed("-");
+
+            WriteQRCode(messages);
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="QRCode"/> class.
+        /// </summary>
+        /// <param name="bmp">The bitmap from which the QRCode must be decoded.</param>
+        public QRCode(SKBitmap bmp)
+        {
+            Log.LogDetailed("-");
+
+            Bitmap = new(bmp);
             ReadQRCode();
         }
 
@@ -148,9 +156,9 @@ namespace QRCodeGenerator
         }
 
         /// <summary>
-        /// Gets or sets the version for this QRCode.
+        /// Gets or sets the Mask pattern for this QRCode.
         /// </summary>
-        /// <remarks>The version  must be in the range of 1-40.</remarks>
+        /// <remarks>The version  must be in the range of 1-7.</remarks>
         public int MaskPatternReference
         {
             get
@@ -180,18 +188,17 @@ namespace QRCodeGenerator
         /// <summary>
         /// Gets the bitmap representing this QRCode.
         /// </summary>
-        public Bitmap? Bitmap
-        {
-            get
-            {
-                return bitmap;
-            }
-        }
+        private BitArray? Bitmap { get; set; }
 
         /// <summary>
         /// Gets the decoded data from the QRCode.
         /// </summary>
         public string DecodedData { get; private set; } = string.Empty;
+
+        /// <summary>
+        /// Gets a value indicating whether to use a single encoding for all the data..
+        /// </summary>
+        public bool UseSingleEncoder  { get; private set; } = true;
 
         #endregion Properties
 
@@ -205,6 +212,8 @@ namespace QRCodeGenerator
         /// <param name="message">The data which the QRCode must contain.</param>
         protected void WriteQRCode(string message)
         {
+            Log.LogDetailed("-");
+
             ErrorCorrection = ErrorCorrectionLevel.LevelL;
             List<string> messages = AnalyzeData(message);
             EncodeData(messages);
@@ -216,13 +225,39 @@ namespace QRCodeGenerator
         }
 
         /// <summary>
+        /// Call all steps to create a QRCode.
+        /// </summary>
+        /// <param name="messages">The data which the QRCode must contain.</param>
+        protected void WriteQRCode(string[] messages)
+        {
+            Log.LogDetailed("-");
+
+            ErrorCorrection = ErrorCorrectionLevel.LevelL;
+            var analyzedMessages = new List<string>();
+            foreach (var message in messages)
+            {
+                analyzedMessages.Add("4" + message);
+            }
+            EncodeData(analyzedMessages);
+            CodeErrorCorrection();
+            StructureFinalMessage();
+            PutModulesInMatrix();
+            MaskMatrix();
+            WriteFormatAndVersion();
+        }
+
+        /// <summary>
         /// Analyze the data to check what encoding mode is best.
         /// </summary>
         /// <param name="message">The data which the QRCode must contain.</param>
-        /// <returns>A list of strings, in which the first character defines how to encode the string.</returns>
+        /// <returns>A list of strings, in which the first character defines how to encode the data.</returns>
         private List<string> AnalyzeData(string message)
         {
+            Log.LogDetailed("-");
+
             List<string> subMessages = new List<string>();
+            int maxEncodingMode = 0;
+            string originalMessage = message;
 
             while (!string.IsNullOrEmpty(message))
             {
@@ -231,6 +266,7 @@ namespace QRCodeGenerator
                 while (!string.IsNullOrEmpty(message))
                 {
                     bool nextSubMessage = false;
+                    maxEncodingMode = Math.Max(maxEncodingMode, mode);
                     switch (mode)
                     {
                         case 1:
@@ -301,6 +337,11 @@ namespace QRCodeGenerator
                 subMessages.Add(mode.ToString("X1") + subMessage);
             }
 
+            if (UseSingleEncoder)
+            {
+                return new() { $"{maxEncodingMode:X1}{originalMessage}" };
+            }
+
             int messageCount = 0;
             while (subMessages.Count != messageCount)
             {
@@ -351,6 +392,8 @@ namespace QRCodeGenerator
         /// <param name="messages">The data which the QRCode must contain.</param>
         private void EncodeData(List<string> messages)
         {
+            Log.LogDetailed("-");
+
             foreach (string message in messages)
             {
                 switch (message[0])
@@ -408,6 +451,8 @@ namespace QRCodeGenerator
         /// <param name="data">The data which the must be encoded in Numeric format.</param>
         private void GetNumericDataFromInputStream(string data)
         {
+            Log.LogDetailed("-");
+
             // Write Mode indicator for numeric segment.
             finalBitStream.AddBits(1, 4);
 
@@ -464,6 +509,8 @@ namespace QRCodeGenerator
         /// <param name="data">The data which the must be encoded in Alphanumeric format.</param>
         private void GetAlphaNumericDataFromInputStream(string data)
         {
+            Log.LogDetailed("-");
+
             // Write Mode indicator for numeric segment.
             finalBitStream.AddBits(2, 4);
 
@@ -505,6 +552,8 @@ namespace QRCodeGenerator
         /// <param name="data">The data which the must be encoded in Binary format.</param>
         private void GetBinaryDataFromInputStream(string data)
         {
+            Log.LogDetailed("-");
+
             // Write Mode indicator for numeric segment.
             finalBitStream.AddBits(4, 4);
 
@@ -532,6 +581,8 @@ namespace QRCodeGenerator
         /// </summary>
         private void CodeErrorCorrection()
         {
+            Log.LogDetailed("-");
+
             for (int i = 0; i < dataBlockBitStreams.Count; i++)
             {
                 dataBlockBitStreams[i].ResetStream();
@@ -554,6 +605,8 @@ namespace QRCodeGenerator
         /// </summary>
         private void StructureFinalMessage()
         {
+            Log.LogDetailed("-");
+
             finalBitStream.Clear();
             for (int i = 0; i < BlockInfo!.BlockSizes!.Count; i++)
             {
@@ -591,32 +644,31 @@ namespace QRCodeGenerator
         /// </summary>
         private void PutModulesInMatrix()
         {
+            Log.LogDetailed("-");
+
             finalBitStream.ResetStream();
             DataRegion dataRegion = new DataRegion(Version);
 
-            bitmap = new Bitmap(Version * 4 + 17, Version * 4 + 17, PixelFormat.Format32bppArgb);
-            using (Graphics g = Graphics.FromImage(bitmap))
-            {
-                g.Clear(Color.White);
-            }
+            var bmp = new BitArray(Version);
+            Bitmap = bmp;
 
-            for (int x = bitmap.Width - 1; x > 0; x -= 2)
+            for (int x = bmp.Size - 1; x > 0; x -= 2)
             {
                 if (6 == x)
                 {
                     x--;
                 }
 
-                for (int y = bitmap.Height - 1; y >= 0; y--)
+                for (int y = bmp.Size - 1; y >= 0; y--)
                 {
                     if (dataRegion.IsDataAtPos(x, y))
                     {
-                        bitmap.SetPixel(x, y, finalBitStream.GetBit() ? Color.Black : Color.White);
+                        bmp[x, y] = finalBitStream.GetBit();
                     }
 
                     if (dataRegion.IsDataAtPos(x - 1, y))
                     {
-                        bitmap.SetPixel(x - 1, y, finalBitStream.GetBit() ? Color.Black : Color.White);
+                        bmp[x - 1, y] = finalBitStream.GetBit();
                     }
                 }
 
@@ -628,16 +680,16 @@ namespace QRCodeGenerator
 
                 if (x > 0)
                 {
-                    for (int y = 0; y < bitmap.Height; y++)
+                    for (int y = 0; y < bmp.Size; y++)
                     {
                         if (dataRegion.IsDataAtPos(x, y))
                         {
-                            bitmap.SetPixel(x, y, finalBitStream.GetBit() ? Color.Black : Color.White);
+                            bmp[x, y] = finalBitStream.GetBit();
                         }
 
                         if (dataRegion.IsDataAtPos(x - 1, y))
                         {
-                            bitmap.SetPixel(x - 1, y, finalBitStream.GetBit() ? Color.Black : Color.White);
+                            bmp[x - 1, y] = finalBitStream.GetBit();
                         }
                     }
                 }
@@ -649,9 +701,11 @@ namespace QRCodeGenerator
         /// </summary>
         private void MaskMatrix()
         {
-            MaskPatternReference = 7;
+            Log.LogDetailed("-");
+
+            MaskPatternReference = 4;
             MaskPattern mask = new MaskPattern(MaskPatternReference, Version);
-            bitmap = mask.MaskBitmap(bitmap!);
+            Bitmap = mask.MaskBitmap(Bitmap!);
         }
 
         /// <summary>
@@ -659,6 +713,8 @@ namespace QRCodeGenerator
         /// </summary>
         private void WriteFormatAndVersion()
         {
+            Log.LogDetailed("-");
+
             int formatInformation = 0;
             switch (ErrorCorrection)
             {
@@ -681,7 +737,7 @@ namespace QRCodeGenerator
             
             FormatInformation = BCH.FormatCheckSum(formatInformation) ^ QRCode.FORMAT_INFO_XOR_MASK;
 
-            int size = bitmap!.Width - 1;
+            int size = Bitmap!.Size - 1;
             for (int i = 0; i < 6; i++)
             {
                 EncodeFormatAndMask(8, i);
@@ -716,13 +772,13 @@ namespace QRCodeGenerator
                 {
                     if ((versionInfo & 0x01) != 0)
                     {
-                        bitmap.SetPixel(size - 10 + (i % 3), i / 3, Color.Black);
-                        bitmap.SetPixel(i / 3, size - 10 + (i % 3), Color.Black);
+                        Bitmap[size - 10 + (i % 3), i / 3] = true;
+                        Bitmap[i / 3, size - 10 + (i % 3)] = true;
                     }
                     else
                     {
-                        bitmap.SetPixel(size - 10 + (i % 3), i / 3, Color.White);
-                        bitmap.SetPixel(i / 3, size - 10 + (i % 3), Color.White);
+                        Bitmap[size - 10 + (i % 3), i / 3] = false;
+                        Bitmap[i / 3, size - 10 + (i % 3)] = false;
                     }
 
                     versionInfo >>= 1;
@@ -737,13 +793,15 @@ namespace QRCodeGenerator
         /// <param name="y">The y position of the pixel.</param>
         private void EncodeFormatAndMask(int x, int y)
         {
+            Log.LogDetailed("-");
+
             if ((FormatInformation & 0x01) != 0)
             {
-                bitmap!.SetPixel(x, y, Color.Black);
+                Bitmap![x, y] = true;
             }
             else
             {
-                bitmap!.SetPixel(x, y, Color.White);
+                Bitmap![x, y] = false;
             }
         }
 
@@ -756,6 +814,8 @@ namespace QRCodeGenerator
         /// </summary>
         protected void ReadQRCode()
         {
+            Log.LogDetailed("-");
+
             ReadFormatAndVersion();
             UnmaskMatrix();
             GettModulesFromMatrix();
@@ -771,7 +831,9 @@ namespace QRCodeGenerator
         /// </summary>
         private void ReadFormatAndVersion()
         {
-            Version = (bitmap!.Width - 17) >> 2;
+            Log.LogDetailed("-");
+
+            Version = (Bitmap!.Size - 17) >> 2;
 
             FormatInformation = 0;
             for (int i = 0; i < 6; i++)
@@ -815,8 +877,10 @@ namespace QRCodeGenerator
         /// <param name="y">The y coordinate of the pixel to decode.</param>
         private void DecodeFormatAndVersion(int x, int y)
         {
+            Log.LogDetailed("-");
+
             FormatInformation <<= 1;
-            if (bitmap!.GetPixel(x, y).ToArgb() == Color.Black.ToArgb())
+            if (Bitmap![x, y])
             {
                 FormatInformation++;
             }
@@ -829,9 +893,10 @@ namespace QRCodeGenerator
         /// </summary>
         private void UnmaskMatrix()
         {
+            Log.LogDetailed("-");
+
             MaskPattern mask = new MaskPattern(MaskPatternReference, Version);
-            bitmap = mask.UnmaskBitmap(bitmap!);
-            bitmap!.Save(@"D:\16-3\Artwork\Final\tmp.png");
+            Bitmap = mask.UnmaskBitmap(Bitmap!);
         }
 
         /// <summary>
@@ -839,25 +904,27 @@ namespace QRCodeGenerator
         /// </summary>
         private void GettModulesFromMatrix()
         {
+            Log.LogDetailed("-");
+
             DataRegion dataRegion = new DataRegion(Version);
 
-            for (int x = bitmap!.Width - 1; x > 0; x -= 2)
+            for (int x = Bitmap!.Size - 1; x > 0; x -= 2)
             {
                 if (6 == x)
                 {
                     x--;
                 }
 
-                for (int y = bitmap!.Height - 1; y >= 0; y--)
+                for (int y = Bitmap!.Size - 1; y >= 0; y--)
                 {
                     if (dataRegion.IsDataAtPos(x, y))
                     {
-                        finalBitStream.AddBit(bitmap.GetPixel(x, y).ToArgb() == Color.Black.ToArgb());
+                        finalBitStream.AddBit(Bitmap[x, y]);
                     }
 
                     if (dataRegion.IsDataAtPos(x - 1, y))
                     {
-                        finalBitStream.AddBit(bitmap.GetPixel(x - 1, y).ToArgb() == Color.Black.ToArgb());
+                        finalBitStream.AddBit(Bitmap[x - 1, y]);
                     }
                 }
 
@@ -869,16 +936,16 @@ namespace QRCodeGenerator
 
                 if (x > 0)
                 {
-                    for (int y = 0; y < bitmap.Height; y++)
+                    for (int y = 0; y < Bitmap.Size; y++)
                     {
                         if (dataRegion.IsDataAtPos(x, y))
                         {
-                            finalBitStream.AddBit(bitmap.GetPixel(x, y).ToArgb() == Color.Black.ToArgb());
+                            finalBitStream.AddBit(Bitmap[x, y]);
                         }
 
                         if (dataRegion.IsDataAtPos(x - 1, y))
                         {
-                            finalBitStream.AddBit(bitmap.GetPixel(x - 1, y).ToArgb() == Color.Black.ToArgb());
+                            finalBitStream.AddBit(Bitmap[x - 1, y]);
                         }
                     }
                 }
@@ -892,6 +959,8 @@ namespace QRCodeGenerator
         /// </summary>
         private void DestructureFinalMessage()
         {
+            Log.LogDetailed("-");
+
             BlockInfo bi = new BlockInfo(Version, ErrorCorrection);
             for (int i = 0; i < bi.BlockSizes!.Count; i++)
             {
@@ -952,6 +1021,8 @@ namespace QRCodeGenerator
         /// </summary>
         private void DecodeErrorCorrection()
         {
+            Log.LogDetailed("-");
+
             // TODO: Error correction is not our top priority right now.
         }
 
@@ -960,6 +1031,8 @@ namespace QRCodeGenerator
         /// </summary>
         private void DecodeData()
         {
+            Log.LogDetailed("-");
+
             // Assemble the blocks back into 1 stream.
             finalBitStream.Clear();
             for (int i = 0; i < dataBlockBitStreams.Count; i++)
@@ -1015,6 +1088,8 @@ namespace QRCodeGenerator
         /// <returns>The string which was encoded in Numeric format.</returns>
         private string DecodeNumericStream()
         {
+            Log.LogDetailed("-");
+
             string result = string.Empty;
             int length = 0;
             if (10 > Version)
@@ -1037,16 +1112,16 @@ namespace QRCodeGenerator
 
             for (int i = 0; i < length - 2; i += 3)
             {
-                result += finalBitStream.GetBits(10).ToString("D3");
+                result += finalBitStream.GetBits(10).ToString("D3") + " ";
             }
 
             switch (length % 3)
             {
                 case 1:
-                    result += finalBitStream.GetBits(4).ToString();
+                    result += finalBitStream.GetBits(4).ToString() + " ";
                     break;
                 case 2:
-                    result += finalBitStream.GetBits(7).ToString("D2");
+                    result += finalBitStream.GetBits(7).ToString("D2") + " ";
                     break;
             }
 
@@ -1059,6 +1134,8 @@ namespace QRCodeGenerator
         /// <returns>The string which was encoded in Alpha Numeric format.</returns>
         private string DecodeAlphaNumericStream()
         {
+            Log.LogDetailed("-");
+
             string result = string.Empty;
             int length = 0;
             if (10 > Version)
@@ -1100,6 +1177,8 @@ namespace QRCodeGenerator
         /// <returns>The string which was encoded in Binary format.</returns>
         private string DecodeBinaryStream()
         {
+            Log.LogDetailed("-");
+
             string result = string.Empty;
             int length = 0;
             if (10 > Version)
@@ -1127,6 +1206,8 @@ namespace QRCodeGenerator
         /// <returns>The string which was encoded in Kanji format.</returns>
         private string DecodeKanjiStream()
         {
+            Log.LogDetailed("-");
+
             string result = string.Empty;
 
             int length = 0;
@@ -1155,6 +1236,13 @@ namespace QRCodeGenerator
             }
 
             return result;
+        }
+
+        public void Save(string fileName)
+        {
+            using var stream = new SKFileWStream(fileName);
+            Bitmap!.CreateBitmap(1).Encode(stream, SKEncodedImageFormat.Png, 100);
+            stream.Flush();
         }
 
         #endregion Decoding of the code

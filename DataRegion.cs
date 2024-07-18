@@ -1,15 +1,13 @@
 ﻿// <copyright file="DataRegion.cs" project="QRCodeGenerator" author="Peter Laudy">
 // Copyright © 2024 - Peter Laudy All rights reserved.
 // </copyright>
-using System.Collections.Generic;
-using System.Drawing;
 
 namespace QRCodeGenerator
 {
     /// <summary>
     /// Class which tells us where the data bits are located in the QRCode bitmap.
     /// </summary>
-    public class DataRegion
+    internal class DataRegion
     {
         #region Member variables
 
@@ -33,6 +31,8 @@ namespace QRCodeGenerator
         /// <param name="version">The version for which we want to find the AP positions.</param>
         public DataRegion(int version)
         {
+            Log.LogMessage();
+
             size = version * 4 + 17;
             allignmentPattern = new AllignmentPatterns(version);
         }
@@ -64,6 +64,8 @@ namespace QRCodeGenerator
         /// <returns>True if a data bit is located at the given position, false if not.</returns>
         public bool IsDataAtPos(int x, int y)
         {
+            Log.LogMessage();
+
             // Timing patterns
             if ((x == 6) || (y == 6))
             {
@@ -92,13 +94,13 @@ namespace QRCodeGenerator
             if (size >= 45)
             {
                 // Top-right version information
-                if ((x > size - 12) && (y < 7))
+                if ((x > size - 12) && (y < 6))
                 {
                     return false;
                 }
 
                 // Bottom-left version information
-                if ((x < 7) && (y > size - 12))
+                if ((x < 6) && (y > size - 12))
                 {
                     return false;
                 }

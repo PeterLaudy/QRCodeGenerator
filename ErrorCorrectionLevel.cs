@@ -1,7 +1,6 @@
 ﻿// <copyright file="ErrorCorrectionLevel.cs" project="QRCodeGenerator" author="Peter Laudy">
 // Copyright © 2024 - Peter Laudy All rights reserved.
 // </copyright>
-using System;
 
 namespace QRCodeGenerator
 {
