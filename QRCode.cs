@@ -159,14 +159,14 @@ namespace QRCodeGenerator
         /// Gets or sets the Mask pattern for this QRCode.
         /// </summary>
         /// <remarks>The version  must be in the range of 1-7.</remarks>
-        public int MaskPatternReference
+        private int MaskPatternReference
         {
             get
             {
                 return maskPatternReference;
             }
 
-            protected set
+            set
             {
                 if ((value >= 1) && (value <= 7))
                 {
@@ -220,8 +220,7 @@ namespace QRCodeGenerator
             CodeErrorCorrection();
             StructureFinalMessage();
             PutModulesInMatrix();
-            MaskMatrix();
-            WriteFormatAndVersion();
+            MaskPatternReference = MaskMatrix();
         }
 
         /// <summary>
@@ -242,8 +241,7 @@ namespace QRCodeGenerator
             CodeErrorCorrection();
             StructureFinalMessage();
             PutModulesInMatrix();
-            MaskMatrix();
-            WriteFormatAndVersion();
+            MaskPatternReference = MaskMatrix();
         }
 
         /// <summary>
@@ -699,24 +697,45 @@ namespace QRCodeGenerator
         /// <summary>
         /// Apply the mask to the bitmap.
         /// </summary>
-        private void MaskMatrix()
+        private int MaskMatrix()
         {
             Log.LogDetailed("-");
 
-            MaskPatternReference = 4;
-            MaskPattern mask = new MaskPattern(MaskPatternReference, Version);
-            Bitmap = mask.MaskBitmap(Bitmap!);
+            var minPenalty = int.MaxValue;
+            var bestMaskReference = 0;
+            for (var maskRef = 1; maskRef < 8; maskRef++)
+            {
+                MaskPattern mask = new MaskPattern(maskRef, Version);
+                var bmp = mask.MaskBitmap(Bitmap!);
+                WriteFormatAndVersion(bmp, ErrorCorrection, maskRef);
+                Save($"bmp-{maskRef}.png", bmp);
+                var penalty = 
+                    PenaltyScoreRule1.CalculatePenalty(bmp) +
+                    PenaltyScoreRule2.CalculatePenalty(bmp) +
+                    PenaltyScoreRule3.CalculatePenalty(bmp) +
+                    PenaltyScoreRule4.CalculatePenalty(bmp);
+                minPenalty = Math.Min(minPenalty, penalty);
+                if (minPenalty == penalty)
+                {
+                    bestMaskReference = maskRef;
+                }
+            }
+
+            Bitmap = (new MaskPattern(bestMaskReference, Version)).MaskBitmap(Bitmap!);
+            WriteFormatAndVersion(Bitmap, ErrorCorrection, bestMaskReference);
+            Log.LogInfo($"Mask {bestMaskReference} was chosen for this QR-Code");
+            return bestMaskReference;
         }
 
         /// <summary>
         /// Write the format and (if applicable) the version information to the bitmap.
         /// </summary>
-        private void WriteFormatAndVersion()
+        private static void WriteFormatAndVersion(BitArray bmp, ErrorCorrectionLevel ecl, int mask)
         {
             Log.LogDetailed("-");
 
             int formatInformation = 0;
-            switch (ErrorCorrection)
+            switch (ecl)
             {
                 case ErrorCorrectionLevel.LevelM:
                     formatInformation = 0;
@@ -733,52 +752,52 @@ namespace QRCodeGenerator
             }
 
             formatInformation <<= 3;
-            formatInformation |= MaskPatternReference;
+            formatInformation |= mask;
             
-            FormatInformation = BCH.FormatCheckSum(formatInformation) ^ QRCode.FORMAT_INFO_XOR_MASK;
+            formatInformation = BCH.FormatCheckSum(formatInformation) ^ QRCode.FORMAT_INFO_XOR_MASK;
 
-            int size = Bitmap!.Size - 1;
+            int size = bmp.Size - 1;
             for (int i = 0; i < 6; i++)
             {
-                EncodeFormatAndMask(8, i);
-                EncodeFormatAndMask(size - i, 8);
-                FormatInformation >>= 1;
+                EncodeFormatAndMask(bmp, formatInformation, 8, i);
+                EncodeFormatAndMask(bmp, formatInformation, size - i, 8);
+                formatInformation >>= 1;
             }
 
-            EncodeFormatAndMask(8, 7);
-            EncodeFormatAndMask(size - 6, 8);
-            FormatInformation >>= 1;
+            EncodeFormatAndMask(bmp, formatInformation, 8, 7);
+            EncodeFormatAndMask(bmp, formatInformation, size - 6, 8);
+            formatInformation >>= 1;
 
-            EncodeFormatAndMask(8, 8);
-            EncodeFormatAndMask(size - 7, 8);
-            FormatInformation >>= 1;
+            EncodeFormatAndMask(bmp, formatInformation, 8, 8);
+            EncodeFormatAndMask(bmp, formatInformation, size - 7, 8);
+            formatInformation >>= 1;
 
-            EncodeFormatAndMask(7, 8);
-            EncodeFormatAndMask(8, size - 6);
-            FormatInformation >>= 1;
+            EncodeFormatAndMask(bmp, formatInformation, 7, 8);
+            EncodeFormatAndMask(bmp, formatInformation, 8, size - 6);
+            formatInformation >>= 1;
 
             for (int i = 5; i >= 0; i--)
             {
-                EncodeFormatAndMask(i, 8);
-                EncodeFormatAndMask(8, size - i);
-                FormatInformation >>= 1;
+                EncodeFormatAndMask(bmp, formatInformation, i, 8);
+                EncodeFormatAndMask(bmp, formatInformation, 8, size - i);
+                formatInformation >>= 1;
             }
 
-            if (Version >= 7)
+            if (bmp.Version >= 7)
             {
-                int versionInfo = BCH.VersionCheckSum(Version);
+                int versionInfo = BCH.VersionCheckSum(bmp.Version);
 
                 for (int i = 0; i < 18; i++)
                 {
                     if ((versionInfo & 0x01) != 0)
                     {
-                        Bitmap[size - 10 + (i % 3), i / 3] = true;
-                        Bitmap[i / 3, size - 10 + (i % 3)] = true;
+                        bmp[size - 10 + (i % 3), i / 3] = true;
+                        bmp[i / 3, size - 10 + (i % 3)] = true;
                     }
                     else
                     {
-                        Bitmap[size - 10 + (i % 3), i / 3] = false;
-                        Bitmap[i / 3, size - 10 + (i % 3)] = false;
+                        bmp[size - 10 + (i % 3), i / 3] = false;
+                        bmp[i / 3, size - 10 + (i % 3)] = false;
                     }
 
                     versionInfo >>= 1;
@@ -791,17 +810,17 @@ namespace QRCodeGenerator
         /// </summary>
         /// <param name="x">The x position of the pixel.</param>
         /// <param name="y">The y position of the pixel.</param>
-        private void EncodeFormatAndMask(int x, int y)
+        private static void EncodeFormatAndMask(BitArray bmp, int formatInfo, int x, int y)
         {
             Log.LogDetailed("-");
 
-            if ((FormatInformation & 0x01) != 0)
+            if ((formatInfo & 0x01) != 0)
             {
-                Bitmap![x, y] = true;
+                bmp[x, y] = true;
             }
             else
             {
-                Bitmap![x, y] = false;
+                bmp[x, y] = false;
             }
         }
 
@@ -833,7 +852,7 @@ namespace QRCodeGenerator
         {
             Log.LogDetailed("-");
 
-            Version = (Bitmap!.Size - 17) >> 2;
+            Version = Bitmap!.Version;
 
             FormatInformation = 0;
             for (int i = 0; i < 6; i++)
@@ -1240,8 +1259,13 @@ namespace QRCodeGenerator
 
         public void Save(string fileName)
         {
+            QRCode.Save(fileName, Bitmap!);
+        }
+
+        private static void Save(string fileName, BitArray bmp)
+        {
             using var stream = new SKFileWStream(fileName);
-            Bitmap!.CreateBitmap(1).Encode(stream, SKEncodedImageFormat.Png, 100);
+            bmp.CreateBitmap(1).Encode(stream, SKEncodedImageFormat.Png, 100);
             stream.Flush();
         }
 

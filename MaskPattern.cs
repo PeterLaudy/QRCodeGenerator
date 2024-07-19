@@ -284,7 +284,6 @@ namespace QRCodeGenerator
         /// <param name="version">The version of the QRCode to mask.</param>
         public MaskPattern(int maskPatternReference, int version)
         {
-            Log.LogInfo($"Mask:{maskPatternReference} Version:{version}");
             switch (maskPatternReference)
             {
                 case 0:
